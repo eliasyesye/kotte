@@ -111,7 +111,7 @@ namespace kotte
         [[nodiscard]] Rectangle entity_collision_bounds(const Entity& entity) const noexcept;
         [[nodiscard]] bool entity_movement_is_blocked(
             EntityHandle moving_entity_handle,
-            Vector2 proposed_position);
+            Vector2 proposed_position);        
         [[nodiscard]] static bool is_solid(EntityKind kind) noexcept;
         [[nodiscard]] static Vector2 cardinal_vector(CardinalDirection direction) noexcept;
         [[nodiscard]] CardinalDirection different_enemy_direction(CardinalDirection current_direction);

@@ -309,7 +309,7 @@ namespace kotte
             // The store owns the bomb; these handles are synchronized, non-owning
             // views used by spatial queries and timed gameplay.
             spatial_grid_.insert(bomb_handle, entity_world_bounds(bomb));
-            active_bomb_handles_.push_back(bomb_handle);
+            active_bomb_handles_.push_back(bomb_handle);            
         }
 
         place_bomb_requests_.clear();
@@ -726,6 +726,19 @@ namespace kotte
                 continue;
             }
 
+            if (candidate->kind == EntityKind::bomb
+                && candidate->bomb_state.has_value()
+                && candidate->bomb_state->owner == moving_entity_handle) {
+                const Entity* moving_entity = entities_.try_get(moving_entity_handle);
+
+                if (moving_entity != nullptr
+                    && CheckCollisionRecs(
+                        entity_collision_bounds(*moving_entity),
+                        entity_collision_bounds(*candidate))) {
+                    continue;
+                }
+            }
+
             // Narrow phase: exact-test the remaining solid candidate.
             ++collision_diagnostics_.exact_tests;
             if(CheckCollisionRecs(proposed_collision_bounds, entity_collision_bounds(*candidate))){
@@ -745,9 +758,8 @@ namespace kotte
         case EntityKind::player:
         case EntityKind::crate:
         case EntityKind::enemy:
-            return true;
         case EntityKind::bomb:
-            return false;
+            return true;
         }
 
         return false;
