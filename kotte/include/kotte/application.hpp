@@ -73,6 +73,7 @@ namespace kotte
             float remaining_seconds = 0.0f;
         };
 
+        void update_game_state() noexcept;
         void run_frame(float delta_time);
         void begin_frame() noexcept;
         void collect_frame_actions() noexcept;

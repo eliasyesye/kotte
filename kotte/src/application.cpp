@@ -49,6 +49,7 @@ namespace kotte
         // boundaries visible as the simulation grows.
         begin_frame();
         collect_frame_actions();
+        update_game_state();
         if (game_state_ == GameState::playing) {
             update_gameplay(delta_time);
         }
@@ -57,6 +58,26 @@ namespace kotte
         apply_structural_mutations();
         update_presentation(delta_time);
         render();
+    }
+
+    void Application::update_game_state() noexcept
+    {
+        if (game_state_ == GameState::playing && enemy_handles_.empty()) {
+            game_state_ = GameState::win;
+        }
+
+        if (game_state_ == GameState::gameover || game_state_ == GameState::win) {
+            if (IsKeyPressed(KEY_R)) {
+                // Restart the game by resetting the state and reinitializing entities.
+                game_state_ = GameState::playing;
+                entities_.clear();
+                enemy_handles_.clear();
+                active_bomb_handles_.clear();
+                spatial_grid_.clear();
+                populate_entities();
+                initialize_enemies();
+            }
+        }
     }
 
     void Application::begin_frame() noexcept{
@@ -71,17 +92,6 @@ namespace kotte
     void Application::collect_frame_actions() noexcept{
         if(IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_Q)){
             request_exit();
-        }
-
-        if (game_state_ == GameState::gameover && IsKeyPressed(KEY_R)) {
-            // Restart the game by resetting the state and reinitializing entities.
-            game_state_ = GameState::playing;
-            entities_.clear();
-            enemy_handles_.clear();
-            active_bomb_handles_.clear();
-            spatial_grid_.clear();
-            populate_entities();
-            initialize_enemies();
         }
 
         frame_actions_.place_bomb = IsKeyPressed(KEY_SPACE);
@@ -110,7 +120,7 @@ namespace kotte
         // The player and every enemy are movers; each asks its own collision question.
         update_player(delta_time);
         update_enemies(delta_time);
-        queue_bomb_placement();
+        queue_bomb_placement();        
     }
 
     void Application::update_timed_gameplay(float delta_time){
@@ -565,6 +575,13 @@ namespace kotte
             DrawText("GAME OVER", window_.width() / 2 - 200, window_.height() / 2 - 60, 60, RED);
             DrawText("Press R to Restart", window_.width() / 2 - 150, window_.height() / 2 + 10, 30, WHITE);
         }
+        if (game_state_ == GameState::win) {
+            DrawText("YOU WIN", window_.width() / 2 - 135, window_.height() / 2 - 60, 60, GREEN);
+            DrawText("Press R to Restart", window_.width() / 2 - 150, window_.height() / 2 + 10, 30, WHITE);
+        }
+
+        diagnostics = std::format("Remaining enemies: {}", enemy_handles_.size());
+        DrawText(diagnostics.c_str(), 10, window_.height() - 102, 20, RAYWHITE);
 
     }
 
