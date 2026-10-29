@@ -49,7 +49,9 @@ namespace kotte
         // boundaries visible as the simulation grows.
         begin_frame();
         collect_frame_actions();
-        update_gameplay(delta_time);
+        if (game_state_ == GameState::playing) {
+            update_gameplay(delta_time);
+        }
         update_timed_gameplay(delta_time);
         resolve_gameplay_facts();
         apply_structural_mutations();
@@ -70,6 +72,18 @@ namespace kotte
         if(IsKeyPressed(KEY_ESCAPE) || IsKeyPressed(KEY_Q)){
             request_exit();
         }
+
+        if (game_state_ == GameState::gameover && IsKeyPressed(KEY_R)) {
+            // Restart the game by resetting the state and reinitializing entities.
+            game_state_ = GameState::playing;
+            entities_.clear();
+            enemy_handles_.clear();
+            active_bomb_handles_.clear();
+            spatial_grid_.clear();
+            populate_entities();
+            initialize_enemies();
+        }
+
         frame_actions_.place_bomb = IsKeyPressed(KEY_SPACE);
 
         Vector2& movement_direction = frame_actions_.player_movement_direction;
@@ -360,8 +374,8 @@ namespace kotte
                 destroy_entity_requests_.push_back({handle});
                 blocked_by_crate = true;
                 break;
-            case EntityKind::player:
-                // Player-hit consequences are outside the Week 6 lifetime seam.
+            case EntityKind::player:                
+                game_state_ = GameState::gameover;
                 break;
             }
         }
@@ -546,6 +560,12 @@ namespace kotte
         DrawText(diagnostics.c_str(), 10, window_.height() - 54, 20, RAYWHITE);
 
         DrawText("move: WASD/arrows | bomb: Space | quit: Q/Escape", 10, window_.height() - 30, 20, LIGHTGRAY);
+
+        if (game_state_ == GameState::gameover) {
+            DrawText("GAME OVER", window_.width() / 2 - 200, window_.height() / 2 - 60, 60, RED);
+            DrawText("Press R to Restart", window_.width() / 2 - 150, window_.height() / 2 + 10, 30, WHITE);
+        }
+
     }
 
     void Application::populate_entities(){
@@ -694,6 +714,9 @@ namespace kotte
             if(CheckCollisionRecs(proposed_collision_bounds, entity_collision_bounds(*candidate))){
                 ++collision_diagnostics_.contacts;
                 blocked = true;
+                if (candidate->kind == EntityKind::enemy && moving_entity_handle == player_handle_) {
+                    game_state_ = GameState::gameover;
+                }
             }
         }
 

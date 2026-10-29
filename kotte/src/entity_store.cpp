@@ -6,6 +6,12 @@
 
 namespace kotte
 {
+    void EntityStore::clear() noexcept{
+        slots_.clear();
+        free_slots_.clear();
+        live_count_ = 0;
+    }
+
     void EntityStore::reserve(std::size_t capacity){
         if(capacity > EntityHandle::invalid_slot){
             throw std::length_error{"EntityStore capacity exceeds the handle index range."};
