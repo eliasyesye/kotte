@@ -292,6 +292,19 @@ namespace kotte
             const Entity* owner = entities_.try_get(request.owner);
             if(owner == nullptr || owner->kind != EntityKind::player
                 || owner_has_active_bomb(request.owner)){
+                //continue;
+            }
+
+            if (std::ranges::any_of(
+                active_bomb_handles_,
+                [&](const EntityHandle bomb_handle) {
+                    const Entity* active_bomb = entities_.try_get(bomb_handle);
+
+                    return active_bomb != nullptr
+                        && active_bomb->bomb_state.has_value()
+                        && tile_centre(active_bomb->world_position).x == request.world_position.x
+                        && tile_centre(active_bomb->world_position).y == request.world_position.y;
+                })) {
                 continue;
             }
 
@@ -309,7 +322,8 @@ namespace kotte
             // The store owns the bomb; these handles are synchronized, non-owning
             // views used by spatial queries and timed gameplay.
             spatial_grid_.insert(bomb_handle, entity_world_bounds(bomb));
-            active_bomb_handles_.push_back(bomb_handle);            
+            active_bomb_handles_.push_back(bomb_handle);   
+            printf("bomb placed at: (%.2f, %.2f)\n", request.world_position.x, request.world_position.y);
         }
 
         place_bomb_requests_.clear();
@@ -611,6 +625,11 @@ namespace kotte
                     static_cast<float>(x * tile_size_ + tile_size_ / 2),
                     static_cast<float>(y * tile_size_ + tile_size_ / 2)
                 };
+
+                if (kind == EntityKind::enemy && y == 1) {
+                    continue;
+                }
+
                 const Entity new_entity{kind, world_position};
                 const EntityHandle handle = entities_.create(new_entity);
                 spatial_grid_.insert(handle, entity_world_bounds(new_entity));
