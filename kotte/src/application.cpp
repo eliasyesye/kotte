@@ -76,6 +76,7 @@ namespace kotte
                 spatial_grid_.clear();
                 populate_entities();
                 initialize_enemies();
+                bomb_blast_range_ = default_bomb_blast_range_;
             }
         }
     }
@@ -222,6 +223,8 @@ namespace kotte
 
         const Rectangle new_world_bounds = entity_world_bounds(player_entity);
         spatial_grid_.update(player_handle_, old_world_bounds, new_world_bounds);
+
+        collect_power_up();
     }
 
     void Application::try_move_player(Vector2 axis_displacement){
@@ -287,12 +290,26 @@ namespace kotte
         });
     }
 
+    std::size_t Application::active_bomb_count(EntityHandle owner) const noexcept
+    {
+        return static_cast<std::size_t>(std::ranges::count_if(
+            active_bomb_handles_,
+            [this, owner](EntityHandle bomb_handle) {
+                const Entity* bomb = entities_.try_get(bomb_handle);
+
+                return bomb != nullptr
+                    && bomb->bomb_state.has_value()
+                    && bomb->bomb_state->owner == owner;
+            }));
+    }
+
     void Application::apply_bomb_placements(){
         for(const PlaceBombRequest& request : place_bomb_requests_){
             const Entity* owner = entities_.try_get(request.owner);
-            if(owner == nullptr || owner->kind != EntityKind::player
-                || owner_has_active_bomb(request.owner)){
-                //continue;
+            if (owner == nullptr
+                || owner->kind != EntityKind::player
+                || active_bomb_count(request.owner) >= bomb_max_amount_) {
+                continue;
             }
 
             if (std::ranges::any_of(
@@ -322,8 +339,7 @@ namespace kotte
             // The store owns the bomb; these handles are synchronized, non-owning
             // views used by spatial queries and timed gameplay.
             spatial_grid_.insert(bomb_handle, entity_world_bounds(bomb));
-            active_bomb_handles_.push_back(bomb_handle);   
-            printf("bomb placed at: (%.2f, %.2f)\n", request.world_position.x, request.world_position.y);
+            active_bomb_handles_.push_back(bomb_handle);               
         }
 
         place_bomb_requests_.clear();
@@ -390,7 +406,13 @@ namespace kotte
             }
 
             switch(candidate->kind){
-            case EntityKind::bomb:
+            case EntityKind::bomb: {
+                Entity* bomb = entities_.try_get(handle);
+                if (bomb != nullptr && bomb->bomb_state.has_value()) {
+                    bomb->bomb_state->fuse_remaining = 0.0f;
+                }
+                break;
+            }
             case EntityKind::enemy:
                 destroy_entity_requests_.push_back({handle});
                 break;
@@ -608,6 +630,12 @@ namespace kotte
         player_handle_ = entities_.create(player_entity);
         spatial_grid_.insert(player_handle_, entity_world_bounds(player_entity));
 
+        const Entity power_up_entity{ EntityKind::power_up,{ tile_size_ * 5.5f, tile_size_ * 5.5f } };
+        const EntityHandle power_up_handle = entities_.create(power_up_entity);
+        spatial_grid_.insert(
+            power_up_handle,
+            entity_world_bounds(power_up_entity));
+
         for(int y = 1; y < map_.height() - 1; ++y){
             for(int x = 1; x < map_.width() - 1; ++x){
                 if((x == 2 && y == 2) || map_.at(x, y).type != TileType::floor || !random_.coin_flip(0.25f)){
@@ -678,6 +706,7 @@ namespace kotte
         case EntityKind::bomb: size = {22.0f, 22.0f}; break;
         case EntityKind::crate: size = {36.0f, 48.0f}; break;
         case EntityKind::enemy: size = {28.0f, 30.0f}; break;
+        case EntityKind::power_up:size = { 24.0f, 24.0f }; break;
         }
 
         const Vector2 top_left = entity.world_position - Vector2{size.x / 2.0f, size.y};
@@ -694,6 +723,7 @@ namespace kotte
         case EntityKind::bomb: size = {18.0f, 12.0f}; break;
         case EntityKind::crate: size = {32.0f, 32.0f}; break;
         case EntityKind::enemy: size = {24.0f, 14.0f}; break;
+        case EntityKind::power_up: size = {24.0f, 24.0f}; break;
         }
 
         const Vector2 top_left = entity.world_position - Vector2{size.x / 2.0f, size.y};
@@ -777,7 +807,7 @@ namespace kotte
         case EntityKind::player:
         case EntityKind::crate:
         case EntityKind::enemy:
-        case EntityKind::bomb:
+        case EntityKind::bomb:        
             return true;
         }
 
@@ -838,12 +868,45 @@ namespace kotte
         case EntityKind::bomb: return bomb_color_;
         case EntityKind::crate: return crate_color_;
         case EntityKind::enemy: return enemy_color_;
+        case EntityKind::power_up: return power_up_color_;
         }
         return MAGENTA;
     }
 
     float Application::entity_roundness(EntityKind kind) noexcept{
         return kind == EntityKind::crate ? 0.15f : 0.8f;
+    }
+
+    void Application::collect_power_up()
+    {
+        const Entity& player_entity = player();
+        const Rectangle player_bounds =
+            entity_collision_bounds(player_entity);
+
+        const SpatialQuery nearby_entities =
+            spatial_grid_.query(player_bounds);
+
+        for (const EntityHandle handle : nearby_entities.entity_handles) {
+            const Entity* candidate = entities_.try_get(handle);
+
+            if (candidate == nullptr
+                || candidate->kind != EntityKind::power_up) {
+                continue;
+            }
+
+            if (CheckCollisionRecs(
+                player_bounds,
+                entity_collision_bounds(*candidate))) {
+                power_up_collected(handle);
+            }
+        }
+    }
+
+
+    void Application::power_up_collected(EntityHandle power_up_handle)
+    {
+        bomb_blast_range_ = 5;
+        destroy_entity_requests_.push_back({ power_up_handle });
     }
 
     void Application::request_exit() noexcept{
