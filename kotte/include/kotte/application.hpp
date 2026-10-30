@@ -120,8 +120,13 @@ namespace kotte
         [[nodiscard]] static Vector2 tile_centre(int column, int row) noexcept;
         [[nodiscard]] static Color entity_color(EntityKind kind) noexcept;
         [[nodiscard]] static float entity_roundness(EntityKind kind) noexcept;
+        void kill_player() noexcept;
         void power_up_collected(EntityHandle power_up_handle);
+        void shield_power_up_collected(EntityHandle shield_power_up_handle);
         void collect_power_up();
+        bool player_shielded_ = false;
+        static constexpr float shield_duration_ = 5.0f;
+        float shield_timer_ = 0.0f;
         static constexpr int tile_size_ = 40;
         static constexpr int spatial_cell_tiles_ = 8;
         static constexpr float spatial_cell_size_ = tile_size_ * spatial_cell_tiles_;
@@ -129,6 +134,8 @@ namespace kotte
         static constexpr float enemy_speed_ = 80.0f;
         static constexpr float bomb_fuse_seconds_ = 2.0f;
         static constexpr int bomb_max_amount_ = 3;
+        static constexpr int win_goal_ = 5;
+        int enemies_defeated_ = 0;
         [[nodiscard]] std::size_t active_bomb_count(EntityHandle owner) const noexcept;
         int bomb_amount_ = 0;
         static constexpr std::uint8_t default_bomb_blast_range_ = 3;
@@ -147,6 +154,7 @@ namespace kotte
         static constexpr Color enemy_color_{0xd9, 0x4f, 0x70, 0xff};
         static constexpr Color wall_color_{0x78, 0x5f, 0x47, 0xff};
         static constexpr Color power_up_color_{0xff, 0xff, 0x00, 0xff};
+        static constexpr Color shield_color_{ 0x00, 0x00, 0xff, 0xff };
 
         Window window_; // Constructed first, destroyed last.
         Camera camera_;
@@ -169,8 +177,8 @@ namespace kotte
         enum class GameState
         {
             playing,
-            gameover,
-            win
+            lost,
+            won
         };
         GameState game_state_ = GameState::playing;
     };

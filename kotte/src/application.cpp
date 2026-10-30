@@ -52,8 +52,8 @@ namespace kotte
         update_game_state();
         if (game_state_ == GameState::playing) {
             update_gameplay(delta_time);
-        }
-        update_timed_gameplay(delta_time);
+            update_timed_gameplay(delta_time);
+        }        
         resolve_gameplay_facts();
         apply_structural_mutations();
         update_presentation(delta_time);
@@ -62,11 +62,12 @@ namespace kotte
 
     void Application::update_game_state() noexcept
     {
-        if (game_state_ == GameState::playing && enemy_handles_.empty()) {
-            game_state_ = GameState::win;
+        // Losing is prioritezed over winning if the player dies on the same frame as defeating the last enemy
+        if (game_state_ == GameState::playing && enemies_defeated_ >= win_goal_) {
+            game_state_ = GameState::won;
         }
 
-        if (game_state_ == GameState::gameover || game_state_ == GameState::win) {
+        if (game_state_ == GameState::lost || game_state_ == GameState::won) {
             if (IsKeyPressed(KEY_R)) {
                 // Restart the game by resetting the state and reinitializing entities.
                 game_state_ = GameState::playing;
@@ -77,8 +78,17 @@ namespace kotte
                 populate_entities();
                 initialize_enemies();
                 bomb_blast_range_ = default_bomb_blast_range_;
+                enemies_defeated_ = 0;
             }
         }
+    }
+
+    void Application::kill_player() noexcept
+    {
+        if (game_state_ != GameState::playing || player_shielded_) {
+            return;
+        }        
+        game_state_ = GameState::lost;
     }
 
     void Application::begin_frame() noexcept{
@@ -125,6 +135,15 @@ namespace kotte
     }
 
     void Application::update_timed_gameplay(float delta_time){
+        if (player_shielded_) {
+            shield_timer_ += delta_time;
+
+            if (shield_timer_ >= shield_duration_) {
+                player_shielded_ = false;
+                shield_timer_ = 0.0f;
+            }
+        }
+
         // This list is independent of camera queries, so off-screen fuses advance.
         for(const EntityHandle bomb_handle : active_bomb_handles_){
             Entity* bomb = entities_.try_get(bomb_handle);
@@ -360,6 +379,9 @@ namespace kotte
                 continue;
             }
 
+            if (doomed->kind == EntityKind::enemy) {
+                ++enemies_defeated_;
+            }
             // Spatial membership is derived from the live entity, so remove it
             // while the handle can still resolve to the bounds used at insertion.
             spatial_grid_.remove(request.entity, entity_world_bounds(*doomed));
@@ -421,7 +443,9 @@ namespace kotte
                 blocked_by_crate = true;
                 break;
             case EntityKind::player:                
-                game_state_ = GameState::gameover;
+                if (!player_shielded_) {
+                    game_state_ = GameState::lost;
+                }
                 break;
             }
         }
@@ -607,16 +631,20 @@ namespace kotte
 
         DrawText("move: WASD/arrows | bomb: Space | quit: Q/Escape", 10, window_.height() - 30, 20, LIGHTGRAY);
 
-        if (game_state_ == GameState::gameover) {
+        if (game_state_ == GameState::lost) {
             DrawText("GAME OVER", window_.width() / 2 - 200, window_.height() / 2 - 60, 60, RED);
             DrawText("Press R to Restart", window_.width() / 2 - 150, window_.height() / 2 + 10, 30, WHITE);
         }
-        if (game_state_ == GameState::win) {
+        if (game_state_ == GameState::won) {
             DrawText("YOU WIN", window_.width() / 2 - 135, window_.height() / 2 - 60, 60, GREEN);
             DrawText("Press R to Restart", window_.width() / 2 - 150, window_.height() / 2 + 10, 30, WHITE);
         }
 
-        diagnostics = std::format("Remaining enemies: {}", enemy_handles_.size());
+        if (player_shielded_) {
+            DrawText(std::format("SHIELD ACTIVE: {:.1f}s", shield_duration_ - shield_timer_).c_str(), window_.width() / 2 - 150, window_.height() - 200, 20, YELLOW);
+        }
+
+        diagnostics = std::format("Remaining enemies: {}", win_goal_ - enemies_defeated_);
         DrawText(diagnostics.c_str(), 10, window_.height() - 102, 20, RAYWHITE);
 
     }
@@ -635,6 +663,12 @@ namespace kotte
         spatial_grid_.insert(
             power_up_handle,
             entity_world_bounds(power_up_entity));
+
+        const Entity shield_power_up_entity{ EntityKind::shield_power_up,{ tile_size_ * 7.5f, tile_size_ * 7.5f } };
+        const EntityHandle shield_power_up_handle = entities_.create(shield_power_up_entity);
+        spatial_grid_.insert(
+            shield_power_up_handle,
+            entity_world_bounds(shield_power_up_entity));
 
         for(int y = 1; y < map_.height() - 1; ++y){
             for(int x = 1; x < map_.width() - 1; ++x){
@@ -707,6 +741,7 @@ namespace kotte
         case EntityKind::crate: size = {36.0f, 48.0f}; break;
         case EntityKind::enemy: size = {28.0f, 30.0f}; break;
         case EntityKind::power_up:size = { 24.0f, 24.0f }; break;
+        case EntityKind::shield_power_up: size = { 24.0f, 24.0f }; break;
         }
 
         const Vector2 top_left = entity.world_position - Vector2{size.x / 2.0f, size.y};
@@ -724,6 +759,7 @@ namespace kotte
         case EntityKind::crate: size = {32.0f, 32.0f}; break;
         case EntityKind::enemy: size = {24.0f, 14.0f}; break;
         case EntityKind::power_up: size = {24.0f, 24.0f}; break;
+        case EntityKind::shield_power_up: size = {24.0f, 24.0f}; break;
         }
 
         const Vector2 top_left = entity.world_position - Vector2{size.x / 2.0f, size.y};
@@ -793,8 +829,12 @@ namespace kotte
             if(CheckCollisionRecs(proposed_collision_bounds, entity_collision_bounds(*candidate))){
                 ++collision_diagnostics_.contacts;
                 blocked = true;
-                if (candidate->kind == EntityKind::enemy && moving_entity_handle == player_handle_) {
-                    game_state_ = GameState::gameover;
+
+                if ((proposed_entity.kind == EntityKind::player
+                    && candidate->kind == EntityKind::enemy)
+                    || (proposed_entity.kind == EntityKind::enemy
+                        && candidate->kind == EntityKind::player)) {
+                    kill_player();
                 }
             }
         }
@@ -807,7 +847,7 @@ namespace kotte
         case EntityKind::player:
         case EntityKind::crate:
         case EntityKind::enemy:
-        case EntityKind::bomb:        
+        case EntityKind::bomb:       
             return true;
         }
 
@@ -869,6 +909,7 @@ namespace kotte
         case EntityKind::crate: return crate_color_;
         case EntityKind::enemy: return enemy_color_;
         case EntityKind::power_up: return power_up_color_;
+        case EntityKind::shield_power_up: return shield_color_;
         }
         return MAGENTA;
     }
@@ -889,15 +930,18 @@ namespace kotte
         for (const EntityHandle handle : nearby_entities.entity_handles) {
             const Entity* candidate = entities_.try_get(handle);
 
-            if (candidate == nullptr
-                || candidate->kind != EntityKind::power_up) {
+            if (candidate == nullptr || (candidate->kind != EntityKind::power_up && candidate->kind != EntityKind::shield_power_up)) {
                 continue;
             }
 
             if (CheckCollisionRecs(
                 player_bounds,
                 entity_collision_bounds(*candidate))) {
-                power_up_collected(handle);
+                if (candidate->kind == EntityKind::power_up) {
+                    power_up_collected(handle);
+                } else if (candidate->kind == EntityKind::shield_power_up) {
+                    shield_power_up_collected(handle);
+                }
             }
         }
     }
@@ -907,6 +951,12 @@ namespace kotte
     {
         bomb_blast_range_ = 5;
         destroy_entity_requests_.push_back({ power_up_handle });
+    }
+    void Application::shield_power_up_collected(EntityHandle shield_power_up_handle)
+    {
+        player_shielded_ = true;
+        shield_timer_ = 0.0f;
+        destroy_entity_requests_.push_back({ shield_power_up_handle });
     }
 
     void Application::request_exit() noexcept{
