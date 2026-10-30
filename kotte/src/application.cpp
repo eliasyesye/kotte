@@ -78,7 +78,10 @@ namespace kotte
                 populate_entities();
                 initialize_enemies();
                 bomb_blast_range_ = default_bomb_blast_range_;
+                blast_effects_.clear();
                 enemies_defeated_ = 0;
+                player_shielded_ = false;
+                shield_timer_ = 0.0f;
             }
         }
     }
@@ -643,9 +646,11 @@ namespace kotte
         if (player_shielded_) {
             DrawText(std::format("SHIELD ACTIVE: {:.1f}s", shield_duration_ - shield_timer_).c_str(), window_.width() / 2 - 150, window_.height() - 200, 20, YELLOW);
         }
-
+        DrawText("Objective: Defeat 5 enemies", 10, window_.height() - 300, 20, RAYWHITE);
         diagnostics = std::format("Remaining enemies: {}", win_goal_ - enemies_defeated_);
-        DrawText(diagnostics.c_str(), 10, window_.height() - 102, 20, RAYWHITE);
+        DrawText(diagnostics.c_str(), 10, window_.height() - 275, 20, RAYWHITE);
+
+        DrawText(std::format("Blast range: {}", bomb_blast_range_).c_str(), 10, window_.height() - 200, 20, RAYWHITE);
 
     }
 
@@ -949,7 +954,7 @@ namespace kotte
 
     void Application::power_up_collected(EntityHandle power_up_handle)
     {
-        bomb_blast_range_ = 5;
+        bomb_blast_range_ = std::min(max_bomb_blast_range_, static_cast<std::uint8_t>(bomb_blast_range_ + 2));
         destroy_entity_requests_.push_back({ power_up_handle });
     }
     void Application::shield_power_up_collected(EntityHandle shield_power_up_handle)

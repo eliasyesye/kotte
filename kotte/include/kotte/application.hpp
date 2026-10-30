@@ -136,10 +136,10 @@ namespace kotte
         static constexpr int bomb_max_amount_ = 3;
         static constexpr int win_goal_ = 5;
         int enemies_defeated_ = 0;
-        [[nodiscard]] std::size_t active_bomb_count(EntityHandle owner) const noexcept;
-        int bomb_amount_ = 0;
+        [[nodiscard]] std::size_t active_bomb_count(EntityHandle owner) const noexcept;        
         static constexpr std::uint8_t default_bomb_blast_range_ = 3;
         std::uint8_t bomb_blast_range_ = default_bomb_blast_range_;
+        static constexpr std::uint8_t max_bomb_blast_range_ = 5;
         static constexpr float blast_effect_seconds_ = 0.35f;
         static constexpr Color background_color_{0x11, 0x22, 0x33, 0xff};
         static constexpr Color floor_colors_[3]{
